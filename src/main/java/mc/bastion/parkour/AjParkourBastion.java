@@ -20,6 +20,8 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
     private final Random random = new Random();
     private final Map<Block, BlockData> originals = new LinkedHashMap<>();
     private final Deque<Location> platforms = new ArrayDeque<>();
+    private final List<Location> circuit = new ArrayList<>();
+    private int circuitNextIndex = 0;
     private final Set<String> visitedColumns = new HashSet<>();
     private Player runner;
     private int score;
@@ -128,125 +130,78 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         if (score < hard) return 3 + random.nextInt(2);
         return 4;
     }
-    // Search in all horizontal directions (including diagonals), with safe height changes.
-    // The old implementation only used 4 cardinal directions and could get stuck by a wall.
-    // Preferimos saltos horizontales: los cambios de altura creaban rutas complicadas
-    // y la arena está construida alrededor de estructuras del Lobby.
-    private List<Location> candidates(Location from, Set<String> reserved) {
+    // Ruta circular PREVALIDADA: no se decide el proximo salto al llegar al bloque.
+    // El circuito se inspecciona completo antes de iniciar y se reutiliza por vuelta.
+    // Es una pista virtual (sin tocar bloques fuera de las plataformas activas).
+    private List<Location> makePerimeter(World world, int minX, int maxX, int minZ, int maxZ, int y) {
         List<Location> result = new ArrayList<>();
-        int target = distanceForScore();
-        for (int dx = -4; dx <= 4; dx++) for (int dz = -4; dz <= 4; dz++) {
-            double distance = Math.hypot(dx, dz);
-            if (distance < 1.95 || distance > 4.15) continue;
-            Location next = from.clone().add(dx, 0, dz);
-            if (reserved.contains(column(next)) || !emptySpace(next)) continue;
-            result.add(next);
-        }
-        Collections.shuffle(result, random);
-        result.sort(Comparator.comparingDouble(l ->
-                Math.abs(Math.hypot(l.getBlockX() - from.getBlockX(), l.getBlockZ() - from.getBlockZ()) - target)));
+        for (int x = minX; x <= maxX; x++) result.add(new Location(world, x, y, minZ));
+        for (int z = minZ + 1; z <= maxZ; z++) result.add(new Location(world, maxX, y, z));
+        for (int x = maxX - 1; x >= minX; x--) result.add(new Location(world, x, y, maxZ));
+        for (int z = maxZ - 1; z > minZ; z--) result.add(new Location(world, minX, y, z));
         return result;
     }
-
-    private Location findNext(Location from) {
-        List<Location> possible = candidates(from, Set.of());
-        if (possible.isEmpty()) return null;
-        Location selected = null;
-        double bestQuality = Double.NEGATIVE_INFINITY;
-        int checked = 0;
-        for (Location option : possible) {
-            if (checked++ >= 80) break;
-            int continuations = candidates(option, Set.of(column(option))).size();
-            double dist = Math.hypot(option.getBlockX() - from.getBlockX(), option.getBlockZ() - from.getBlockZ());
-            double quality = Math.min(continuations, 30) * 2.0
-                    - Math.abs(dist - distanceForScore()) * 3.0 + random.nextDouble() * 2;
-            if (quality > bestQuality) { bestQuality = quality; selected = option; }
-        }
-        return selected;
+    private boolean spaceAvailable(Location candidate) {
+        Block base = candidate.getBlock();
+        return base.getType().isAir() && base.getRelative(0,1,0).getType().isAir()
+                && base.getRelative(0,2,0).getType().isAir();
     }
-
-    // Planeamos toda la secuencia inicial ANTES de colocar bloques. El antiguo
-    // algoritmo elegía un inicio sin salida y después cancelaba la partida.
-    private List<Location> planStart(Location a, Location b) {
-        if (a == null || b == null) return List.of();
-        int minX = Math.min(a.getBlockX(), b.getBlockX()) + 2;
-        int maxX = Math.max(a.getBlockX(), b.getBlockX()) - 2;
-        int minZ = Math.min(a.getBlockZ(), b.getBlockZ()) + 2;
-        int maxZ = Math.max(a.getBlockZ(), b.getBlockZ()) - 2;
+    private boolean circuitValid(List<Location> proposed) {
+        if (proposed.size() < 28) return false;
+        for (Location loc : proposed) if (!spaceAvailable(loc)) return false;
+        return true;
+    }
+    private boolean prepareCircuit(Location a, Location b) {
+        circuit.clear();
+        int minX = Math.min(a.getBlockX(), b.getBlockX()) + 4;
+        int maxX = Math.max(a.getBlockX(), b.getBlockX()) - 4;
+        int minZ = Math.min(a.getBlockZ(), b.getBlockZ()) + 4;
+        int maxZ = Math.max(a.getBlockZ(), b.getBlockZ()) - 4;
         int minY = Math.min(a.getBlockY(), b.getBlockY()) + 3;
-        int naturalMaxY = Math.max(a.getBlockY(), b.getBlockY()) - 4;
         int maxY = Math.min(a.getWorld().getMaxHeight() - 4,
-                naturalMaxY + Math.max(0, Math.min(128, getConfig().getInt("game.auto-elevate-max-blocks", 50))));
-        if (minX > maxX || minZ > maxZ || minY > maxY) return List.of();
-        int ahead = Math.max(1, Math.min(4, getConfig().getInt("game.jumps-ahead", 2)));
-        Location preferred = parsePosition("start");
-        List<Location> starts = new ArrayList<>();
-        if (preferred != null && emptySpace(preferred)) starts.add(preferred.getBlock().getLocation());
-        // Zona alta primero: la mayoría de edificios de la plaza quedan debajo.
-        // Un Y constante garantiza saltos sin desnivel y evita plataformas apiladas.
-        int centerX = (minX + maxX) / 2, centerZ = (minZ + maxZ) / 2;
-        // Primero intentar niveles elevados que evitan las construcciones del Lobby;
-        // despues niveles originales. Cada inicio se valida con la ruta completa.
+                Math.max(a.getBlockY(), b.getBlockY()) - 4
+                + Math.max(0, Math.min(128, getConfig().getInt("game.auto-elevate-max-blocks", 50))));
+        if (maxX - minX < 9 || maxZ - minZ < 9 || minY > maxY) return false;
+        // Buscar primero niveles altos: la pista debe estar TOTALMENTE libre.
         for (int y = maxY; y >= minY; y--) {
-            List<Location> layer = new ArrayList<>();
-            for (int x = minX; x <= maxX; x++) for (int z = minZ; z <= maxZ; z++) {
-                Location loc = new Location(a.getWorld(), x, y, z);
-                if (emptySpace(loc)) layer.add(loc);
-            }
-            Collections.shuffle(layer, random);
-            layer.sort(Comparator.comparingInt(loc -> Math.abs(loc.getBlockX()-centerX) + Math.abs(loc.getBlockZ()-centerZ)));
-            starts.addAll(layer.subList(0, Math.min(layer.size(), 18)));
-            if (starts.size() >= 540) break;
-        }
-        for (Location first : starts) {
-            List<Location> route = new ArrayList<>(); route.add(first);
-            if (extendPlan(route, ahead, 0)) return route;
-        }
-        return List.of();
-    }
-
-    // Búsqueda con retroceso: comprueba que haya 2 plataformas adelantadas
-    // y no pone nada en el mundo hasta tener la ruta completa.
-    private boolean extendPlan(List<Location> route, int remaining, int depth) {
-        if (remaining <= 0) return true;
-        if (depth > 4) return false;
-        Set<String> reserved = new HashSet<>();
-        for (Location loc : route) reserved.add(column(loc));
-        List<Location> options = candidates(route.get(route.size()-1), reserved);
-        int tries = 0;
-        for (Location candidate : options) {
-            if (++tries > 75) break;
-            route.add(candidate);
-            if (extendPlan(route, remaining-1, depth+1)) return true;
-            route.remove(route.size()-1);
+            List<Location> proposed = makePerimeter(a.getWorld(), minX, maxX, minZ, maxZ, y);
+            if (!circuitValid(proposed)) continue;
+            circuit.addAll(proposed);
+            // Varía el punto de inicio entre partidas, sin teletransportar durante ellas.
+            circuitNextIndex = random.nextInt(circuit.size());
+            getLogger().info("Circuito preparado con " + circuit.size() + " posiciones en Y=" + y);
+            return true;
         }
         return false;
     }
-
-    // Reemplazar solo las plataformas futuras. NUNCA teletransportar al jugador
-    // durante un salto: permanece sobre la plataforma alcanzada y conserva sus puntos.
-    private boolean replanFuture() {
-        if (platforms.isEmpty()) return false;
-        Location current = platforms.getFirst().clone();
-        while (platforms.size() > 1) {
-            Location future = platforms.removeLast();
-            Block b = future.getBlock();
-            BlockData original = originals.remove(b);
-            if (original != null) b.setBlockData(original, false);
-            visitedColumns.remove(column(future));
-        }
+    private int strideForScore() {
+        int easy = getConfig().getInt("game.levels.easy-until", 20);
+        int medium = getConfig().getInt("game.levels.medium-until", 35);
+        int hard = getConfig().getInt("game.levels.hard-until", 50);
+        if (score < easy) return 2 + random.nextInt(2);
+        if (score < medium) return 3;
+        if (score < hard) return 3 + random.nextInt(2);
+        return 4;
+    }
+    private Location nextCircuitLocation() {
+        if (circuit.isEmpty()) return null;
+        circuitNextIndex = (circuitNextIndex + strideForScore()) % circuit.size();
+        return circuit.get(circuitNextIndex);
+    }
+    private boolean seedPlatforms() {
         int ahead = Math.max(1, Math.min(4, getConfig().getInt("game.jumps-ahead", 2)));
-        List<Location> planned = new ArrayList<>();
-        planned.add(current);
-        if (!extendPlan(planned, ahead, 0)) return false;
-        for (int i = 1; i < planned.size(); i++) {
-            if (!place(planned.get(i))) return false;
+        Location first = circuit.get(circuitNextIndex);
+        if (!place(first)) return false;
+        for (int i = 0; i < ahead; i++) {
+            Location next = nextCircuitLocation();
+            if (next == null || !place(next)) return false;
         }
         return true;
     }
 
     private Location lobbySpawn(Player player) {
-        String saved = getConfig().getString("area.lobby-spawn", "");
+        String saved = getConfig().getString("area.return-spawn", "");
+        if (saved == null || saved.isBlank()) saved = getConfig().getString("area.lobby-spawn", "");
         if (saved != null && !saved.isBlank()) {
             try {
                 String[] values = saved.split(",");
@@ -268,7 +223,8 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         String command = getConfig().getString("game.fall-command", "").trim();
         // Si el administrador fijó /ajparkour set lobbyspawn, se usa ese destino preciso.
         // En caso contrario, se admite un comando de spawn de otro plugin.
-        if (getConfig().getString("area.lobby-spawn", "").isBlank() && !command.isBlank()) {
+        if (getConfig().getString("area.return-spawn", "").isBlank()
+                && getConfig().getString("area.lobby-spawn", "").isBlank() && !command.isBlank()) {
             player.performCommand(command.startsWith("/") ? command.substring(1) : command);
         } else {
             player.teleport(destination);
@@ -329,7 +285,7 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
     }
     private void cleanup() {
         for (Map.Entry<Block,BlockData> e : originals.entrySet()) e.getKey().setBlockData(e.getValue(), false);
-        originals.clear(); platforms.clear(); visitedColumns.clear();
+        originals.clear(); platforms.clear(); visitedColumns.clear(); circuit.clear(); circuitNextIndex = 0;
     }
     private void end(boolean tell) {
         if (runner == null) { cleanup(); return; }
@@ -350,21 +306,17 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
                     + "', pos2='" + getConfig().getString("area.pos2") + "'.");
             return;
         }
-        List<Location> route = planStart(a, b);
-        if (route.isEmpty()) {
+        if (!prepareCircuit(a, b)) {
             msg(p, "no-space");
-            diagnose(p);
-            getLogger().warning("Imposible planear las primeras plataformas. Área: "
-                    + getConfig().getString("area.pos1") + " -> " + getConfig().getString("area.pos2")
-                    + ", mundo=" + a.getWorld().getName() + ".");
+            getLogger().warning("No se encontró un perímetro completamente libre en " + a.getWorld().getName()
+                    + ": " + getConfig().getString("area.pos1") + " -> " + getConfig().getString("area.pos2")
+                    + ". Sube game.auto-elevate-max-blocks o usa otra arena.");
             return;
         }
         score = 0; runner = p; lastProgress = System.currentTimeMillis();
         startReturnLocation = p.getLocation().clone();
-        for (Location loc : route) {
-            if (!place(loc)) { end(false); msg(p, "no-space"); return; }
-        }
-        Location first = route.get(0);
+        if (!seedPlatforms()) { end(false); msg(p, "no-space"); return; }
+        Location first = platforms.getFirst();
         p.teleport(first.clone().add(.5, 1.05, .5));
         p.setFallDistance(0);
         msg(p, "start");
@@ -373,12 +325,22 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         if (runner != p || platforms.size() < 2) return;
         Location next = platforms.toArray(new Location[0])[1];
         Location pos = p.getLocation();
-        // Validación completa de altura y posición, evitando puntos por estar sobre otro bloque de la misma columna.
         if (Math.abs(pos.getX() - (next.getBlockX() + .5)) > .72 ||
             Math.abs(pos.getZ() - (next.getBlockZ() + .5)) > .72 ||
             Math.abs(pos.getY() - (next.getBlockY() + 1.0)) > .18 ||
             !p.isOnGround()) return;
         if (!next.getBlock().getType().isSolid()) return;
+
+        // Añadir la proxima ANTES de sumar puntos o retirar bloques previos.
+        // El circuito esta validado al iniciar y permite avanzar indefinidamente.
+        Location generated = nextCircuitLocation();
+        if (generated == null || !place(generated)) {
+            getLogger().warning("Circuito obstruido durante partida en " +
+                    (generated == null ? "desconocido" : generated.toVector().toString()));
+            msg(p, "no-route");
+            // Nunca teletransportar al inicio ni eliminar la plataforma bajo sus pies.
+            return;
+        }
         Location previous = platforms.removeFirst();
         Block old = previous.getBlock();
         BlockData data = originals.remove(old);
@@ -388,12 +350,6 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         lastProgress = System.currentTimeMillis();
         msg(p, "score", "score", "" + score, "level", level(score));
         if (score > best(p)) updateBest(p);
-        Location generated = findNext(platforms.getLast());
-        if (generated == null || !place(generated)) {
-            // No hay ruta en la dirección elegida. Mantener al jugador quieto
-            // y replanificar únicamente los siguientes bloques, sin teletransporte.
-            if (!replanFuture()) { msg(p, "no-route"); end(true); }
-        }
     }
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void move(PlayerMoveEvent e) {
@@ -428,7 +384,7 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         if (runner != null && inArea(e.getBlockPlaced().getLocation())) e.setCancelled(true);
     }
     @Override public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (args.length == 0) { if (sender instanceof Player p) msg(p, "usage"); else sender.sendMessage("/ajparkour start|salir|top|set posicion 1|2|set spawn|set lobbyspawn|reload"); return true; }
+        if (args.length == 0) { if (sender instanceof Player p) msg(p, "usage"); else sender.sendMessage("/ajparkour start|salir|top|set posicion 1|2|set spawn|set inicio|reload"); return true; }
         String option = args[0].toLowerCase(Locale.ROOT);
         if (option.equals("start") || option.equals("iniciar")) {
             if (!(sender instanceof Player p)) { sender.sendMessage("Solo jugadores."); return true; }
@@ -464,13 +420,14 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
             getConfig().set("area." + key, coord); saveConfig();
             msg(p, "set-corner", "corner", args[2], "position", coord); return true;
         }
-        if (args.length >= 2 && args[1].equalsIgnoreCase("lobbyspawn")) {
+        if (args.length >= 2 && (args[1].equalsIgnoreCase("lobbyspawn") || args[1].equalsIgnoreCase("spawn"))) {
+            // /ajparkour set spawn = lugar de REGRESO al caerse, como solicitó el administrador.
             Location l = p.getLocation();
-            getConfig().set("area.lobby-spawn", l.getWorld().getName() + "," + l.getX() + "," + l.getY()
+            getConfig().set("area.return-spawn", l.getWorld().getName() + "," + l.getX() + "," + l.getY()
                     + "," + l.getZ() + "," + l.getYaw() + "," + l.getPitch());
             saveConfig(); msg(p, "set-lobby-spawn"); return true;
         }
-        if (args.length >= 2 && args[1].equalsIgnoreCase("spawn")) {
+        if (args.length >= 2 && args[1].equalsIgnoreCase("inicio")) {
             Location l = p.getLocation();
             getConfig().set("area.world", l.getWorld().getName());
             getConfig().set("area.start", l.getBlockX() + "," + l.getBlockY() + "," + l.getBlockZ());
@@ -485,7 +442,7 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
             return options.stream().filter(s -> s.startsWith(args[0].toLowerCase(Locale.ROOT))).toList();
         }
         if (!sender.hasPermission("ajparkourbastion.admin")) return List.of();
-        if (args.length == 2 && args[0].equalsIgnoreCase("set")) return List.of("posicion", "spawn", "lobbyspawn").stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        if (args.length == 2 && args[0].equalsIgnoreCase("set")) return List.of("posicion", "spawn", "inicio", "lobbyspawn").stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
         if (args.length == 3 && args[0].equalsIgnoreCase("set") && args[1].equalsIgnoreCase("posicion")) return List.of("1", "2");
         return List.of();
     }

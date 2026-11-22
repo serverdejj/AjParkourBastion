@@ -6,6 +6,8 @@ area:
   pos2: '35,130,74'
   # Si no se define, se busca una zona alta y libre con 3 plataformas posibles.
   start: ''
+  # Se configura con /ajparkour set spawn; al caer regresarás aquí.
+  return-spawn: ''
 game:
   # Primera plataforma + 2 adelantadas = 3 visibles
   jumps-ahead: 2
@@ -13,7 +15,6 @@ game:
   # de altura adicionales sobre la esquina más alta (sin superar el límite del mundo).
   # Cambia a 0 para respetar estrictamente el máximo Y marcado.
   auto-elevate-max-blocks: 50
-  max-placement-attempts: 220
   idle-seconds: 120
   # Caer 5 bloques por debajo de la plataforma actual termina la partida y devuelve al Lobby.
   fall-distance: 5
@@ -36,15 +37,15 @@ messages:
   record: '&6¡Nuevo récord personal: %best% puntos!'
   busy: '&cLa arena está ocupada. Espera a que termine la partida actual.'
   no-area: '&cEl mundo o las esquinas de la arena no son válidos. Comprueba area.world, pos1 y pos2.'
-  no-space: '&cNo se encontró una ruta inicial libre. Usa /ajparkour diagnostico y comprueba el espacio vertical.'
+  no-space: '&cNo se encontró un perímetro despejado para el parkour. Comprueba la altura de la arena y /ajparkour diagnostico.'
   relocated: "&e¡Ruta renovada! &7Continuas con &a%score% &7puntos."
-  no-route: '&cNo se pudo generar otra plataforma válida. Partida finalizada sin perder tus puntos.'
+  no-route: '&cSe detectó un obstáculo inesperado. La ruta no se ha borrado; avisa a un administrador.'
   left: '&7Has salido del parkour.'
   fell: '&c¡Te caíste! &7Regresando al spawn del Lobby. Puntos: &e%score%'
-  usage: '&eUsa /ajparkour start, salir, top, set posicion 1, set posicion 2, set spawn o set lobbyspawn.'
+  usage: '&eUsa /ajparkour start, salir, top, set posicion 1/2, set spawn (regreso) o set inicio.'
   set-corner: '&aEsquina %corner% guardada en &f%position%'
-  set-start: '&aInicio guardado. El bloque inicial aparecerá cerca de esta posición.'
-  set-lobby-spawn: '&aPunto de regreso al Lobby guardado. Al caer volverás aquí.'
+  set-start: '&aReferencia de inicio guardada.'
+  set-lobby-spawn: '&aSpawn de regreso guardado. Al caer volverás a esta posición.'
   reloaded: '&aConfiguración recargada.'
   no-permission: '&cNo tienes permiso para usar ese comando.'
   top-header: '&#6BFF80&lTOP PARKOUR'

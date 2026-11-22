@@ -1,21 +1,18 @@
-# AjParkourBastion 1.0.5 — corrección de teletransporte y caída
+# AjParkourBastion 1.0.6 — Circuito estable y spawn de regreso
 
 ## Cambios
+- El recorrido es un circuito cerrado de posiciones prevalidado completamente antes de iniciar. Solo se ponen tres bloques de colores reales en el mundo al mismo tiempo; el resto de la pista es virtual.
+- Los saltos son horizontales, de 2 a 4 bloques entre centros, con dificultad progresiva.
+- El comienzo del circuito se selecciona al azar en cada partida; **no te teletransporta mientras avanzas**.
+- Las puntuaciones se validan con X/Y/Z y contacto con el suelo.
+- `/ajparkour set spawn` guarda el punto **de regreso** al caer. Puedes ejecutarlo en cualquier zona del Lobby que sea segura. `/ajparkour set lobbyspawn` es un alias. `/ajparkour set inicio` guarda referencia para inicio (el circuito selecciona su arranque automáticamente).
+- Mantiene `game.auto-elevate-max-blocks: 50`, el récord y los textos en YAML.
 
-- La recuperación de un salto sin salida **ya no teletransporta al jugador al principio**. Se eliminan solo las plataformas futuras y se busca otra cadena desde la plataforma alcanzada.
-- `game.auto-elevate-max-blocks: 50` por defecto; el código acepta 0–128. En servidores ya instalados, añadir o modificar este valor en `plugins/AjParkourBastion/config.yml`.
-- `game.fall-distance: 5`: al caer más de cinco bloques por debajo de la plataforma alcanzada, se termina la partida, se conservan los récords y se devuelve al Lobby.
-- `/ajparkour set lobbyspawn`: **ejecutar en la ubicación real del spawn del Lobby**; se guarda en `area.lobby-spawn` (mundo, posición, yaw, pitch).
-- Si no se ha marcado un lobbyspawn, se vuelve a la ubicación donde el jugador estaba cuando inició el parkour. Opcionalmente, se puede establecer `game.fall-command: spawn` para ejecutar `/spawn` (por ejemplo, DeluxeHub).
-- El comando `/ajparkour set spawn` sigue siendo únicamente el lugar de la primera plataforma.
+## Actualización
+1. Actualiza código fuente en GitHub y compila con Actions.
+2. Apaga el Lobby, sustituye SOLO el JAR de AjParkourBastion. No borres `plugins/AjParkourBastion/records.yml`.
+3. Si conservas un `config.yml` anterior, la opción nueva `area.return-spawn` se crea al ejecutar `/ajparkour set spawn`.
+4. Entra al lobby en el punto donde deben aparecer los jugadores al caerse, usa `/ajparkour set spawn`, luego `/ajparkour start`.
+5. Evita cargar el antiguo `ajParkour.jar` a la vez.
 
-## Instalación
-
-1. Sustituir código del repositorio por esta versión y compilar en GitHub Actions.
-2. Apagar Lobby, reemplazar solo el JAR, reiniciar.
-3. Conservar `plugins/AjParkourBastion/records.yml` y `config.yml`.
-4. Cambiar en `plugins/AjParkourBastion/config.yml`: `game.auto-elevate-max-blocks: 50`. Agregar `game.fall-distance: 5` si no existe.
-5. Pararse en el spawn real y ejecutar `/ajparkour set lobbyspawn` una vez.
-6. `/ajparkour start` para probar.
-
-**Nota:** este ZIP es código fuente; necesita compilarse y probarse dentro de Purpur 1.21.11. No se modifican récords existentes.
+Si el circuito no encuentra un perímetro de aire totalmente libre en algún nivel de la región, mostrará un error claro. En ese caso es necesario una franja de aire rectangular, o aumentar altura permitida.
