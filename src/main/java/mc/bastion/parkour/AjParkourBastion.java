@@ -94,7 +94,10 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         if (a == null || b == null || p == null || p.getWorld() != a.getWorld()) return false;
         return p.getBlockX() >= Math.min(a.getBlockX(), b.getBlockX()) + 2 && p.getBlockX() <= Math.max(a.getBlockX(), b.getBlockX()) - 2
             && p.getBlockZ() >= Math.min(a.getBlockZ(), b.getBlockZ()) + 2 && p.getBlockZ() <= Math.max(a.getBlockZ(), b.getBlockZ()) - 2
-            && p.getBlockY() >= Math.min(a.getBlockY(), b.getBlockY()) + 3 && p.getBlockY() <= Math.max(a.getBlockY(), b.getBlockY()) - 4;
+            && p.getBlockY() >= Math.min(a.getBlockY(), b.getBlockY()) + 3
+            && p.getBlockY() <= Math.min(p.getWorld().getMaxHeight() - 4,
+                    Math.max(a.getBlockY(), b.getBlockY()) - 4
+                    + Math.max(0, Math.min(32, getConfig().getInt("game.auto-elevate-max-blocks", 24))));
     }
     private String column(Location l) { return l.getBlockX() + ":" + l.getBlockZ(); }
     private boolean emptySpace(Location candidate) {
@@ -169,7 +172,9 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         int minZ = Math.min(a.getBlockZ(), b.getBlockZ()) + 2;
         int maxZ = Math.max(a.getBlockZ(), b.getBlockZ()) - 2;
         int minY = Math.min(a.getBlockY(), b.getBlockY()) + 3;
-        int maxY = Math.max(a.getBlockY(), b.getBlockY()) - 4;
+        int naturalMaxY = Math.max(a.getBlockY(), b.getBlockY()) - 4;
+        int maxY = Math.min(a.getWorld().getMaxHeight() - 4,
+                naturalMaxY + Math.max(0, Math.min(32, getConfig().getInt("game.auto-elevate-max-blocks", 24))));
         if (minX > maxX || minZ > maxZ || minY > maxY) return List.of();
         int ahead = Math.max(1, Math.min(4, getConfig().getInt("game.jumps-ahead", 2)));
         Location preferred = parsePosition("start");
@@ -178,16 +183,18 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         // Zona alta primero: la mayoría de edificios de la plaza quedan debajo.
         // Un Y constante garantiza saltos sin desnivel y evita plataformas apiladas.
         int centerX = (minX + maxX) / 2, centerZ = (minZ + maxZ) / 2;
+        // Primero intentar niveles elevados que evitan las construcciones del Lobby;
+        // despues niveles originales. Cada inicio se valida con la ruta completa.
         for (int y = maxY; y >= minY; y--) {
             List<Location> layer = new ArrayList<>();
-            for (int x = minX; x <= maxX; x += 2) for (int z = minZ; z <= maxZ; z += 2) {
+            for (int x = minX; x <= maxX; x++) for (int z = minZ; z <= maxZ; z++) {
                 Location loc = new Location(a.getWorld(), x, y, z);
                 if (emptySpace(loc)) layer.add(loc);
             }
             Collections.shuffle(layer, random);
             layer.sort(Comparator.comparingInt(loc -> Math.abs(loc.getBlockX()-centerX) + Math.abs(loc.getBlockZ()-centerZ)));
-            starts.addAll(layer.subList(0, Math.min(layer.size(), 12)));
-            if (starts.size() >= 110) break;
+            starts.addAll(layer.subList(0, Math.min(layer.size(), 18)));
+            if (starts.size() >= 540) break;
         }
         for (Location first : starts) {
             List<Location> route = new ArrayList<>(); route.add(first);
@@ -233,6 +240,34 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         msg(player, "relocated", "score", "" + score);
         return true;
     }
+    private void diagnose(Player p) {
+        Location a = parsePosition("pos1"), b = parsePosition("pos2");
+        if (a == null || b == null) { msg(p, "no-area"); return; }
+        int minX = Math.min(a.getBlockX(), b.getBlockX()) + 2;
+        int maxX = Math.max(a.getBlockX(), b.getBlockX()) - 2;
+        int minZ = Math.min(a.getBlockZ(), b.getBlockZ()) + 2;
+        int maxZ = Math.max(a.getBlockZ(), b.getBlockZ()) - 2;
+        int minY = Math.min(a.getBlockY(), b.getBlockY()) + 3;
+        int maxY = Math.min(a.getWorld().getMaxHeight()-4,
+                Math.max(a.getBlockY(), b.getBlockY()) - 4
+                + Math.max(0, Math.min(32, getConfig().getInt("game.auto-elevate-max-blocks", 24))));
+        long free = 0;
+        int sampleY = -1;
+        if (minX <= maxX && minZ <= maxZ && minY <= maxY) {
+            for (int y = maxY; y >= minY; y -= 2) for (int x = minX; x <= maxX; x += 3)
+                for (int z = minZ; z <= maxZ; z += 3) {
+                    Location test = new Location(a.getWorld(), x, y, z);
+                    if (emptySpace(test)) { free++; if (sampleY < 0) sampleY = y; }
+                }
+        }
+        p.sendMessage(color("&#6BFF80&lBASTION PARKOUR &8» &fDiagnóstico: &e" + free
+                + " &fposiciones libres muestreadas; mundo &e" + a.getWorld().getName()
+                + "&f, Y &e" + minY + "&7-&e" + maxY
+                + "&f, ejemplo Y=&e" + sampleY + "&f."));
+        if (free == 0) p.sendMessage(color("&cNo hay posiciones libres: aumenta la altura máxima de la arena o libera espacio."));
+        else p.sendMessage(color("&7Si no inicia, revisa que haya varias posiciones cercanas entre sí para formar una ruta."));
+    }
+
     private boolean place(Location p) {
         if (!emptySpace(p)) return false;
         Block block = p.getBlock();
@@ -275,6 +310,7 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         List<Location> route = planStart(a, b);
         if (route.isEmpty()) {
             msg(p, "no-space");
+            diagnose(p);
             getLogger().warning("Imposible planear las primeras plataformas. Área: "
                     + getConfig().getString("area.pos1") + " -> " + getConfig().getString("area.pos2")
                     + ", mundo=" + a.getWorld().getName() + ".");
@@ -357,8 +393,9 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
             }
             return true;
         }
-        if (!option.equals("set") && !option.equals("reload")) { if (sender instanceof Player p) msg(p, "usage"); return true; }
+        if (!option.equals("set") && !option.equals("reload") && !option.equals("diagnostico")) { if (sender instanceof Player p) msg(p, "usage"); return true; }
         if (!sender.hasPermission("ajparkourbastion.admin")) { if (sender instanceof Player p) msg(p, "no-permission"); return true; }
+        if (option.equals("diagnostico")) { if (sender instanceof Player p) diagnose(p); return true; }
         if (option.equals("reload")) { if (runner != null) end(true); reloadConfig(); if (sender instanceof Player p) msg(p, "reloaded"); return true; }
         if (!(sender instanceof Player p)) { sender.sendMessage("Solo jugadores pueden marcar posiciones."); return true; }
         if (runner != null) { msg(p, "busy"); return true; }
@@ -372,7 +409,7 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         if (args.length >= 2 && args[1].equalsIgnoreCase("spawn")) {
             Location l = p.getLocation();
             getConfig().set("area.world", l.getWorld().getName());
-            getConfig().set("area.start", l.getBlockX() + "," + (l.getBlockY() - 1) + "," + l.getBlockZ());
+            getConfig().set("area.start", l.getBlockX() + "," + l.getBlockY() + "," + l.getBlockZ());
             saveConfig(); msg(p, "set-start"); return true;
         }
         msg(p, "usage"); return true;
@@ -380,7 +417,7 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
     @Override public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
             List<String> options = new ArrayList<>(List.of("start", "salir", "top"));
-            if (sender.hasPermission("ajparkourbastion.admin")) options.addAll(List.of("set", "reload"));
+            if (sender.hasPermission("ajparkourbastion.admin")) options.addAll(List.of("set", "reload", "diagnostico"));
             return options.stream().filter(s -> s.startsWith(args[0].toLowerCase(Locale.ROOT))).toList();
         }
         if (!sender.hasPermission("ajparkourbastion.admin")) return List.of();

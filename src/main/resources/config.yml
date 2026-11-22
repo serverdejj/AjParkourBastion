@@ -9,6 +9,10 @@ area:
 game:
   # Primera plataforma + 2 adelantadas = 3 visibles
   jumps-ahead: 2
+  # Si el área está ocupada por construcciones, se pueden utilizar hasta 24 bloques
+  # de altura adicionales sobre la esquina más alta (sin superar el límite del mundo).
+  # Cambia a 0 para respetar estrictamente el máximo Y marcado.
+  auto-elevate-max-blocks: 24
   max-placement-attempts: 220
   idle-seconds: 120
   # Bloques en mundo: por seguridad solo una partida activa por area
@@ -27,7 +31,7 @@ messages:
   record: '&6¡Nuevo récord personal: %best% puntos!'
   busy: '&cLa arena está ocupada. Espera a que termine la partida actual.'
   no-area: '&cEl mundo o las esquinas de la arena no son válidos. Comprueba area.world, pos1 y pos2.'
-  no-space: '&cNo se encontró un lugar libre para el primer bloque. Usa /ajparkour set spawn en una zona despejada dentro de la arena.'
+  no-space: '&cNo se encontró una ruta inicial libre. Usa /ajparkour diagnostico y comprueba el espacio vertical.'
   relocated: "&e¡Ruta renovada! &7Continuas con &a%score% &7puntos."
   no-route: '&cNo se pudo generar otra plataforma válida. Partida finalizada sin perder tus puntos.'
   left: '&7Has salido del parkour.'

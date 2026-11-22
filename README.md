@@ -1,51 +1,17 @@
-# AjParkourBastion 1.0.3
+# AjParkourBastion 1.0.4 — corrección de inicio
 
-Plugin independiente para **BASTION MC**, Minecraft **Purpur 1.21.11**, Java 21.
+Esta versión corrige `/ajparkour set spawn`: ahora guarda la **posición de los pies** (aire) en vez del suelo sólido bajo el jugador. El bloque de inicio aparece en esa ubicación y el jugador se coloca encima.
 
-## Importante antes de instalar
-- **Quita el antiguo `ajParkour` de la carpeta `plugins/`** (mueve su JAR a una carpeta fuera de `plugins`) porque ambos registran `/ajparkour` y `/ajpk`.
-- **Haz copia de `plugins/ajParkour`** antes de quitar el JAR. NO borres `scores.db`, `positions.yml` ni los datos anteriores.
-- Este plugin nuevo guarda sus récords en `plugins/AjParkourBastion/records.yml`. **No importa automáticamente los récords antiguos**.
-- Solo permite una partida simultánea por arena: los bloques son físicos, no hologramas, y se restauran al terminar. No modificar la arena mientras alguien juega.
+El planificador revisa más posiciones por nivel y habilita, por defecto, una elevación automática hasta **24 bloques por encima de la coordenada Y máxima** del área para sortear los edificios del Lobby. Esto puede colocar el parkour más alto que el techo de la región marcada. Configura `game.auto-elevate-max-blocks: 0` para respetar la altura máxima de la arena.
+
+Nuevo comando administrador: `/ajparkour diagnostico` para ver una muestra de posiciones libres, mundo y alturas examinadas. Si el parkour no inicia, el diagnóstico también aparece en el chat.
 
 ## Instalación
-1. Sube todos los archivos a un repositorio GitHub con la estructura incluida (incluye `.github/workflows/build.yml`).
-2. Actions -> Compilar AjParkourBastion -> Run workflow. Descarga el artifact `AjParkourBastion-JAR`.
-3. Coloca el `.jar` generado en `plugins/`, deja fuera el viejo JAR de ajParkour y reinicia el servidor.
-4. Ya viene con las coordenadas antiguas de **Parkour** de `positions.yml`: mundo `Void`, pos1 `-20,90,16`, pos2 `35,130,74`.
-5. Si cambias el mapa usa `/ajparkour set posicion 1` desde la primera esquina, y `/ajparkour set posicion 2` desde la opuesta. La posición inicial se calcula dentro del área.
-6. Opcional: `/ajparkour set spawn` desde encima del bloque donde deseas iniciar. Debe estar dentro del área.
 
-## Comandos
-- `/ajparkour start` o `/ajpk start`: inicia una partida.
-- `/ajparkour salir`: termina y guarda el récord.
-- `/ajparkour top`: ranking propio.
-- `/ajparkour set posicion 1` y `2`: administra las esquinas (permiso `ajparkourbastion.admin`, OP por defecto).
-- `/ajparkour set spawn`: establece el bloque de salida.
-- `/ajparkour reload`: recarga YAML (termina partida activa).
+1. Actualiza el código del repositorio Github y compila con Actions (Java 21).
+2. Apaga el Lobby y reemplaza el JAR.
+3. Conserva `plugins/AjParkourBastion/records.yml`.
+4. **IMPORTANTE:** el `config.yml` existente NO se sobrescribe al actualizar. Añade bajo `game:` la línea `auto-elevate-max-blocks: 24` o renombra solo `config.yml` para regenerarlo. Los registros no se deben borrar.
+5. Ejecuta `/ajparkour diagnostico` y `/ajparkour start`.
 
-## Mecánica
-- Tres plataformas inicialmente visibles (`jumps-ahead: 2`).
-- Plataformas físicas de concreto de colores configurables. Cuando llegas al siguiente bloque, el anterior desaparece y se genera otro.
-- Dificultad progresiva a partir de los puntos 20, 35 y 50. Puntuación por chat y récord persistente.
-- Validación de coordenadas X, Y, Z y suelo para evitar sumar puntos entre bloques apilados.
-- Evita usar dos veces la misma columna X/Z entre las plataformas activas y nunca pone plataformas fuera del área. Si no hay salida válida, finaliza la partida limpiamente, sin puntos infinitos.
-
-## Observación
-Este es un proyecto nuevo; requiere compilación y pruebas en el servidor real. No se ha validado en una ejecución Purpur completa.
-
-
-## v1.0.1: solución al inicio rechazado
-Si el centro está ocupado, busca automáticamente un bloque inicial en una posición con tres bloques verticales libres en la arena. Si el mundo no existe o las esquinas son incorrectas, registra en consola la configuración y los mundos cargados. Si toda el área está ocupada, muestra un mensaje específico.
-
-Si ya tienes un `plugins/AjParkourBastion/config.yml`, el plugin no lo reemplazará automáticamente. Puedes agregar `messages.no-space` manualmente o conservar el mensaje por defecto que entrega la nueva versión.
-
-## v1.0.3 - generación con ruta previa
-- Planifica las primeras 3 plataformas antes de colocar bloques físicos.
-- Da prioridad a zonas libres de la parte alta de la arena en lugar del centro obstruido del Lobby.
-- Utiliza saltos horizontales en 8 direcciones y distancias progresivas para evitar columnas superpuestas.
-- Cuando una ruta se agota intenta regenerar la secuencia conservando puntos.
-- La arena ya no depende solo del tamaño: necesita volumen de aire para las plataformas.
-- Advertencia: si no hay espacio libre, mostrará un mensaje y registrará el área en consola.
-- Reemplaza los archivos fuente en GitHub, recompila y sustituye solamente el JAR. Conserva `plugins/AjParkourBastion/records.yml`.
-- Versión no probada en el servidor real; revisar errores de compilación y en juego.
+Sigue siendo una versión sin prueba de integración en un servidor Purpur real. La existencia de posiciones libres no garantiza que haya una ruta completa; si el problema persiste, el diagnóstico permitirá distinguir entre falta de aire y restricciones de ruta.
