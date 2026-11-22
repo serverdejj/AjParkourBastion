@@ -123,34 +123,94 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         if (score < hard) return 3 + random.nextInt(2);
         return 4;
     }
-    private Location findNext(Location from) {
-        int attempts = Math.max(30, getConfig().getInt("game.max-placement-attempts", 220));
-        List<Location> options = new ArrayList<>();
-        int d = distanceForScore();
-        for (int n = 0; n < attempts; n++) {
-            int dist = n < attempts / 2 ? d : (n < attempts * 3 / 4 ? Math.min(d, 3) : 2);
-            int direction = random.nextInt(4);
-            int dx = direction == 0 ? dist : direction == 1 ? -dist : 0;
-            int dz = direction == 2 ? dist : direction == 3 ? -dist : 0;
-            int dy = dist >= 4 ? (random.nextBoolean() ? 0 : -1) : random.nextInt(3) - 1;
-            Location next = from.clone().add(dx,dy,dz);
-            if (emptySpace(next)) options.add(next);
-        }
-        // Búsqueda exhaustiva de emergencia: nunca reciclar la misma columna ni poner bloques apilados.
-        if (options.isEmpty()) {
-            for (int dist = 2; dist <= 3; dist++) for (int dir = 0; dir < 4; dir++) for (int y = -1; y <= 1; y++) {
-                Location next = from.clone().add(dir == 0 ? dist : dir == 1 ? -dist : 0, y,
-                        dir == 2 ? dist : dir == 3 ? -dist : 0);
-                if (emptySpace(next)) options.add(next);
+    // Search in all horizontal directions (including diagonals), with safe height changes.
+    // The old implementation only used 4 cardinal directions and could get stuck by a wall.
+    private List<Location> candidates(Location from, Set<String> reserved) {
+        List<Location> result = new ArrayList<>();
+        int target = distanceForScore();
+        for (int dx = -4; dx <= 4; dx++) for (int dz = -4; dz <= 4; dz++) {
+            double distance = Math.hypot(dx, dz);
+            if (distance < 1.9 || distance > 4.25) continue;
+            for (int dy = -1; dy <= 1; dy++) {
+                // Going up one full block with a long gap is not a reliable vanilla jump.
+                if (dy == 1 && distance > 3.1) continue;
+                Location next = from.clone().add(dx, dy, dz);
+                if (reserved.contains(column(next)) || !emptySpace(next)) continue;
+                result.add(next);
             }
         }
-        if (options.isEmpty()) return null;
-        // Favorecer posiciones con más espacio a futuro, no devolver una mala ubicación como válida.
+        // Try the target distance first; fallback positions are allowed when the map is obstructed.
+        Collections.shuffle(result, random);
+        result.sort(Comparator.comparingDouble(l ->
+                Math.abs(Math.hypot(l.getBlockX() - from.getBlockX(), l.getBlockZ() - from.getBlockZ()) - target)
+                        + (l.getBlockY() > from.getBlockY() ? 0.35 : 0.0)));
+        return result;
+    }
+    private Location findNext(Location from) {
+        List<Location> possible = candidates(from, Set.of());
+        if (possible.isEmpty()) return null;
+        // Look ahead to avoid leading players into dead ends, while preserving some variety.
+        Location selected = null;
+        double bestQuality = Double.NEGATIVE_INFINITY;
+        int checked = 0;
+        for (Location option : possible) {
+            if (checked++ >= 65) break;
+            List<Location> continuations = candidates(option, Set.of(column(option)));
+            double quality = Math.min(continuations.size(), 30) * 2.0;
+            double dist = Math.hypot(option.getBlockX() - from.getBlockX(), option.getBlockZ() - from.getBlockZ());
+            quality -= Math.abs(dist - distanceForScore()) * 2;
+            quality += random.nextDouble() * 8;
+            if (quality > bestQuality) { bestQuality = quality; selected = option; }
+        }
+        return selected;
+    }
+    // If a specific route becomes blocked by structures, relocate to a safe fresh section
+    // without resetting the score or records. Only ends if absolutely no valid path exists.
+    private boolean recoverCourse(Player player) {
+        cleanup();
         Location a = parsePosition("pos1"), b = parsePosition("pos2");
-        double cx = (a.getBlockX() + b.getBlockX()) / 2.0;
-        double cz = (a.getBlockZ() + b.getBlockZ()) / 2.0;
-        options.sort(Comparator.comparingDouble((Location l) -> Math.hypot(l.getX() - cx, l.getZ() - cz) + random.nextDouble() * 5));
-        return options.get(0);
+        if (a == null || b == null) return false;
+        Location chosen = null;
+        List<Location> choices = new ArrayList<>();
+        int minX = Math.min(a.getBlockX(), b.getBlockX()) + 2;
+        int maxX = Math.max(a.getBlockX(), b.getBlockX()) - 2;
+        int minZ = Math.min(a.getBlockZ(), b.getBlockZ()) + 2;
+        int maxZ = Math.max(a.getBlockZ(), b.getBlockZ()) - 2;
+        int minY = Math.min(a.getBlockY(), b.getBlockY()) + 3;
+        int maxY = Math.max(a.getBlockY(), b.getBlockY()) - 4;
+        // Keep retries bounded for large custom arenas.
+        for (int i = 0; i < 450; i++) {
+            Location loc = new Location(a.getWorld(), minX + random.nextInt(Math.max(1, maxX-minX+1)),
+                    minY + random.nextInt(Math.max(1, maxY-minY+1)),
+                    minZ + random.nextInt(Math.max(1, maxZ-minZ+1)));
+            if (emptySpace(loc) && !candidates(loc, Set.of()).isEmpty()) choices.add(loc);
+            if (choices.size() >= 12) break;
+        }
+        if (choices.isEmpty()) {
+            Location fallback = findStart(a, b);
+            if (fallback != null && !candidates(fallback, Set.of()).isEmpty()) choices.add(fallback);
+        }
+        if (choices.isEmpty()) return false;
+        Collections.shuffle(choices, random);
+        for (Location loc : choices) {
+            if (!place(loc)) continue;
+            boolean ok = true;
+            int ahead = Math.max(1, Math.min(4, getConfig().getInt("game.jumps-ahead", 2)));
+            for (int i = 0; i < ahead; i++) {
+                Location next = findNext(platforms.getLast());
+                if (next == null || !place(next)) { ok = false; break; }
+            }
+            if (ok) {
+                player.teleport(loc.clone().add(.5, 1.05, .5));
+                player.setFallDistance(0);
+                lastProgress = System.currentTimeMillis();
+                msg(player, "relocated", "score", "" + score);
+                getLogger().info("Ruta recuperada sin reiniciar puntos: " + score + " para " + player.getName());
+                return true;
+            }
+            cleanup();
+        }
+        return false;
     }
     private boolean place(Location p) {
         if (!emptySpace(p)) return false;
@@ -235,7 +295,11 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         int ahead = Math.max(1, Math.min(4, getConfig().getInt("game.jumps-ahead", 2)));
         for (int i = 0; i < ahead; i++) {
             Location next = findNext(platforms.getLast());
-            if (next == null || !place(next)) { end(false); msg(p, "no-route"); return; }
+            if (next == null || !place(next)) {
+                if (!recoverCourse(p)) { end(false); msg(p, "no-route"); }
+                else msg(p, "start");
+                return;
+            }
         }
         p.teleport(start.clone().add(.5, 1.05, .5));
         p.setFallDistance(0);
@@ -261,7 +325,9 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         msg(p, "score", "score", "" + score, "level", level(score));
         if (score > best(p)) updateBest(p);
         Location generated = findNext(platforms.getLast());
-        if (generated == null || !place(generated)) { msg(p, "no-route"); end(true); }
+        if (generated == null || !place(generated)) {
+            if (!recoverCourse(p)) { msg(p, "no-route"); end(true); }
+        }
     }
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void move(PlayerMoveEvent e) {

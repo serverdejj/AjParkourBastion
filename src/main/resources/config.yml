@@ -28,6 +28,7 @@ messages:
   busy: '&cLa arena está ocupada. Espera a que termine la partida actual.'
   no-area: '&cEl mundo o las esquinas de la arena no son válidos. Comprueba area.world, pos1 y pos2.'
   no-space: '&cNo se encontró un lugar libre para el primer bloque. Usa /ajparkour set spawn en una zona despejada dentro de la arena.'
+  relocated: "&e¡Ruta renovada! &7Continuas con &a%score% &7puntos."
   no-route: '&cNo se pudo generar otra plataforma válida. Partida finalizada sin perder tus puntos.'
   left: '&7Has salido del parkour.'
   usage: '&eUsa /ajparkour start, salir, top, set posicion 1, set posicion 2 o set spawn.'
