@@ -1,6 +1,6 @@
 plugins { id 'java' }
 group = 'mc.bastion'
-version = '1.0.6'
+version = '1.0.7'
 repositories {
     mavenCentral()
     maven { url = 'https://repo.papermc.io/repository/maven-public/' }

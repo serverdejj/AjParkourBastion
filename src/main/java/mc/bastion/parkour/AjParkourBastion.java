@@ -34,6 +34,12 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
 
     @Override public void onEnable() {
         saveDefaultConfig();
+        // Migración no destructiva: conserva regiones y récords de versiones previas.
+        if (getConfig().getString("area.return-spawn", "").isBlank()
+                && "Void".equalsIgnoreCase(getConfig().getString("area.world", "Void"))) {
+            getConfig().set("area.return-spawn", "Void,0.560,59.000,29.409,0,0");
+            saveConfig();
+        }
         scoresFile = new File(getDataFolder(), "records.yml");
         scores = YamlConfiguration.loadConfiguration(scoresFile);
         Bukkit.getPluginManager().registerEvents(this, this);
@@ -104,10 +110,16 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
                     + Math.max(0, Math.min(128, getConfig().getInt("game.auto-elevate-max-blocks", 50))));
     }
     private String column(Location l) { return l.getBlockX() + ":" + l.getBlockZ(); }
+    // El Lobby de BASTION usa bloques invisibles minecraft:light para iluminar grandes
+    // zonas del aire. No son obstáculos de movimiento: se permite sustituir uno
+    // temporalmente por una plataforma y restaurar su BlockData original al terminar.
+    private boolean isOpen(Block block) {
+        return block.getType().isAir() || block.getType() == Material.LIGHT;
+    }
     private boolean emptySpace(Location candidate) {
         if (!inArea(candidate) || visitedColumns.contains(column(candidate))) return false;
         Block base = candidate.getBlock();
-        if (!base.getType().isAir() || !base.getRelative(0,1,0).getType().isAir() || !base.getRelative(0,2,0).getType().isAir()) return false;
+        if (!isOpen(base) || !isOpen(base.getRelative(0,1,0)) || !isOpen(base.getRelative(0,2,0))) return false;
         // No se permiten columnas ocupadas por plataformas anteriores, aunque tengan otra Y.
         for (Location l : platforms) if (l.getBlockX() == candidate.getBlockX() && l.getBlockZ() == candidate.getBlockZ()) return false;
         return true;
@@ -143,8 +155,8 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
     }
     private boolean spaceAvailable(Location candidate) {
         Block base = candidate.getBlock();
-        return base.getType().isAir() && base.getRelative(0,1,0).getType().isAir()
-                && base.getRelative(0,2,0).getType().isAir();
+        return isOpen(base) && isOpen(base.getRelative(0,1,0))
+                && isOpen(base.getRelative(0,2,0));
     }
     private boolean circuitValid(List<Location> proposed) {
         if (proposed.size() < 28) return false;
@@ -162,15 +174,21 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
                 Math.max(a.getBlockY(), b.getBlockY()) - 4
                 + Math.max(0, Math.min(128, getConfig().getInt("game.auto-elevate-max-blocks", 50))));
         if (maxX - minX < 9 || maxZ - minZ < 9 || minY > maxY) return false;
-        // Buscar primero niveles altos: la pista debe estar TOTALMENTE libre.
-        for (int y = maxY; y >= minY; y--) {
-            List<Location> proposed = makePerimeter(a.getWorld(), minX, maxX, minZ, maxZ, y);
-            if (!circuitValid(proposed)) continue;
-            circuit.addAll(proposed);
-            // Varía el punto de inicio entre partidas, sin teletransportar durante ellas.
-            circuitNextIndex = random.nextInt(circuit.size());
-            getLogger().info("Circuito preparado con " + circuit.size() + " posiciones en Y=" + y);
-            return true;
+        // Elegir un nivel despejado cercano a la altura estudiada del Lobby (Y=148).
+        // Si una estructura ocupa el nivel elegido, buscar alturas alternativas.
+        int preferred = Math.max(minY, Math.min(maxY, getConfig().getInt("game.preferred-platform-y", 148)));
+        for (int delta = 0; delta <= Math.max(preferred - minY, maxY - preferred); delta++) {
+            for (int sign : new int[] {1, -1}) {
+                if (delta == 0 && sign < 0) continue;
+                int y = preferred + delta * sign;
+                if (y < minY || y > maxY) continue;
+                List<Location> proposed = makePerimeter(a.getWorld(), minX, maxX, minZ, maxZ, y);
+                if (!circuitValid(proposed)) continue;
+                circuit.addAll(proposed);
+                circuitNextIndex = random.nextInt(circuit.size());
+                getLogger().info("Circuito preparado con " + circuit.size() + " posiciones en Y=" + y);
+                return true;
+            }
         }
         return false;
     }

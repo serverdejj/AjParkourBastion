@@ -4,10 +4,10 @@ area:
   world: 'Void'
   pos1: '-20,90,16'
   pos2: '35,130,74'
-  # Si no se define, se busca una zona alta y libre con 3 plataformas posibles.
+  # Se buscará una ruta despejada priorizando game.preferred-platform-y.
   start: ''
   # Se configura con /ajparkour set spawn; al caer regresarás aquí.
-  return-spawn: ''
+  return-spawn: 'Void,0.560,59.000,29.409,0,0'
 game:
   # Primera plataforma + 2 adelantadas = 3 visibles
   jumps-ahead: 2
@@ -15,6 +15,9 @@ game:
   # de altura adicionales sobre la esquina más alta (sin superar el límite del mundo).
   # Cambia a 0 para respetar estrictamente el máximo Y marcado.
   auto-elevate-max-blocks: 50
+  # Analizado en el mapa Void: las construcciones sólidas de la arena original
+  # llegan aproximadamente hasta Y=139. El circuito prioriza Y=148.
+  preferred-platform-y: 148
   idle-seconds: 120
   # Caer 5 bloques por debajo de la plataforma actual termina la partida y devuelve al Lobby.
   fall-distance: 5
