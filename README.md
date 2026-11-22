@@ -1,4 +1,4 @@
-# AjParkourBastion 1.0.0
+# AjParkourBastion 1.0.3
 
 Plugin independiente para **BASTION MC**, Minecraft **Purpur 1.21.11**, Java 21.
 
@@ -39,3 +39,13 @@ Este es un proyecto nuevo; requiere compilación y pruebas en el servidor real. 
 Si el centro está ocupado, busca automáticamente un bloque inicial en una posición con tres bloques verticales libres en la arena. Si el mundo no existe o las esquinas son incorrectas, registra en consola la configuración y los mundos cargados. Si toda el área está ocupada, muestra un mensaje específico.
 
 Si ya tienes un `plugins/AjParkourBastion/config.yml`, el plugin no lo reemplazará automáticamente. Puedes agregar `messages.no-space` manualmente o conservar el mensaje por defecto que entrega la nueva versión.
+
+## v1.0.3 - generación con ruta previa
+- Planifica las primeras 3 plataformas antes de colocar bloques físicos.
+- Da prioridad a zonas libres de la parte alta de la arena en lugar del centro obstruido del Lobby.
+- Utiliza saltos horizontales en 8 direcciones y distancias progresivas para evitar columnas superpuestas.
+- Cuando una ruta se agota intenta regenerar la secuencia conservando puntos.
+- La arena ya no depende solo del tamaño: necesita volumen de aire para las plataformas.
+- Advertencia: si no hay espacio libre, mostrará un mensaje y registrará el área en consola.
+- Reemplaza los archivos fuente en GitHub, recompila y sustituye solamente el JAR. Conserva `plugins/AjParkourBastion/records.yml`.
+- Versión no probada en el servidor real; revisar errores de compilación y en juego.

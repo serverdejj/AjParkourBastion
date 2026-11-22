@@ -4,7 +4,7 @@ area:
   world: 'Void'
   pos1: '-20,90,16'
   pos2: '35,130,74'
-  # Si no se define, el inicio se calcula en el centro del area.
+  # Si no se define, se busca una zona alta y libre con 3 plataformas posibles.
   start: ''
 game:
   # Primera plataforma + 2 adelantadas = 3 visibles

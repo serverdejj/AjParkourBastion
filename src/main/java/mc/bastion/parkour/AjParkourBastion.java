@@ -125,92 +125,113 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
     }
     // Search in all horizontal directions (including diagonals), with safe height changes.
     // The old implementation only used 4 cardinal directions and could get stuck by a wall.
+    // Preferimos saltos horizontales: los cambios de altura creaban rutas complicadas
+    // y la arena está construida alrededor de estructuras del Lobby.
     private List<Location> candidates(Location from, Set<String> reserved) {
         List<Location> result = new ArrayList<>();
         int target = distanceForScore();
         for (int dx = -4; dx <= 4; dx++) for (int dz = -4; dz <= 4; dz++) {
             double distance = Math.hypot(dx, dz);
-            if (distance < 1.9 || distance > 4.25) continue;
-            for (int dy = -1; dy <= 1; dy++) {
-                // Going up one full block with a long gap is not a reliable vanilla jump.
-                if (dy == 1 && distance > 3.1) continue;
-                Location next = from.clone().add(dx, dy, dz);
-                if (reserved.contains(column(next)) || !emptySpace(next)) continue;
-                result.add(next);
-            }
+            if (distance < 1.95 || distance > 4.15) continue;
+            Location next = from.clone().add(dx, 0, dz);
+            if (reserved.contains(column(next)) || !emptySpace(next)) continue;
+            result.add(next);
         }
-        // Try the target distance first; fallback positions are allowed when the map is obstructed.
         Collections.shuffle(result, random);
         result.sort(Comparator.comparingDouble(l ->
-                Math.abs(Math.hypot(l.getBlockX() - from.getBlockX(), l.getBlockZ() - from.getBlockZ()) - target)
-                        + (l.getBlockY() > from.getBlockY() ? 0.35 : 0.0)));
+                Math.abs(Math.hypot(l.getBlockX() - from.getBlockX(), l.getBlockZ() - from.getBlockZ()) - target)));
         return result;
     }
+
     private Location findNext(Location from) {
         List<Location> possible = candidates(from, Set.of());
         if (possible.isEmpty()) return null;
-        // Look ahead to avoid leading players into dead ends, while preserving some variety.
         Location selected = null;
         double bestQuality = Double.NEGATIVE_INFINITY;
         int checked = 0;
         for (Location option : possible) {
-            if (checked++ >= 65) break;
-            List<Location> continuations = candidates(option, Set.of(column(option)));
-            double quality = Math.min(continuations.size(), 30) * 2.0;
+            if (checked++ >= 80) break;
+            int continuations = candidates(option, Set.of(column(option))).size();
             double dist = Math.hypot(option.getBlockX() - from.getBlockX(), option.getBlockZ() - from.getBlockZ());
-            quality -= Math.abs(dist - distanceForScore()) * 2;
-            quality += random.nextDouble() * 8;
+            double quality = Math.min(continuations, 30) * 2.0
+                    - Math.abs(dist - distanceForScore()) * 3.0 + random.nextDouble() * 2;
             if (quality > bestQuality) { bestQuality = quality; selected = option; }
         }
         return selected;
     }
-    // If a specific route becomes blocked by structures, relocate to a safe fresh section
-    // without resetting the score or records. Only ends if absolutely no valid path exists.
-    private boolean recoverCourse(Player player) {
-        cleanup();
-        Location a = parsePosition("pos1"), b = parsePosition("pos2");
-        if (a == null || b == null) return false;
-        Location chosen = null;
-        List<Location> choices = new ArrayList<>();
+
+    // Planeamos toda la secuencia inicial ANTES de colocar bloques. El antiguo
+    // algoritmo elegía un inicio sin salida y después cancelaba la partida.
+    private List<Location> planStart(Location a, Location b) {
+        if (a == null || b == null) return List.of();
         int minX = Math.min(a.getBlockX(), b.getBlockX()) + 2;
         int maxX = Math.max(a.getBlockX(), b.getBlockX()) - 2;
         int minZ = Math.min(a.getBlockZ(), b.getBlockZ()) + 2;
         int maxZ = Math.max(a.getBlockZ(), b.getBlockZ()) - 2;
         int minY = Math.min(a.getBlockY(), b.getBlockY()) + 3;
         int maxY = Math.max(a.getBlockY(), b.getBlockY()) - 4;
-        // Keep retries bounded for large custom arenas.
-        for (int i = 0; i < 450; i++) {
-            Location loc = new Location(a.getWorld(), minX + random.nextInt(Math.max(1, maxX-minX+1)),
-                    minY + random.nextInt(Math.max(1, maxY-minY+1)),
-                    minZ + random.nextInt(Math.max(1, maxZ-minZ+1)));
-            if (emptySpace(loc) && !candidates(loc, Set.of()).isEmpty()) choices.add(loc);
-            if (choices.size() >= 12) break;
-        }
-        if (choices.isEmpty()) {
-            Location fallback = findStart(a, b);
-            if (fallback != null && !candidates(fallback, Set.of()).isEmpty()) choices.add(fallback);
-        }
-        if (choices.isEmpty()) return false;
-        Collections.shuffle(choices, random);
-        for (Location loc : choices) {
-            if (!place(loc)) continue;
-            boolean ok = true;
-            int ahead = Math.max(1, Math.min(4, getConfig().getInt("game.jumps-ahead", 2)));
-            for (int i = 0; i < ahead; i++) {
-                Location next = findNext(platforms.getLast());
-                if (next == null || !place(next)) { ok = false; break; }
+        if (minX > maxX || minZ > maxZ || minY > maxY) return List.of();
+        int ahead = Math.max(1, Math.min(4, getConfig().getInt("game.jumps-ahead", 2)));
+        Location preferred = parsePosition("start");
+        List<Location> starts = new ArrayList<>();
+        if (preferred != null && emptySpace(preferred)) starts.add(preferred.getBlock().getLocation());
+        // Zona alta primero: la mayoría de edificios de la plaza quedan debajo.
+        // Un Y constante garantiza saltos sin desnivel y evita plataformas apiladas.
+        int centerX = (minX + maxX) / 2, centerZ = (minZ + maxZ) / 2;
+        for (int y = maxY; y >= minY; y--) {
+            List<Location> layer = new ArrayList<>();
+            for (int x = minX; x <= maxX; x += 2) for (int z = minZ; z <= maxZ; z += 2) {
+                Location loc = new Location(a.getWorld(), x, y, z);
+                if (emptySpace(loc)) layer.add(loc);
             }
-            if (ok) {
-                player.teleport(loc.clone().add(.5, 1.05, .5));
-                player.setFallDistance(0);
-                lastProgress = System.currentTimeMillis();
-                msg(player, "relocated", "score", "" + score);
-                getLogger().info("Ruta recuperada sin reiniciar puntos: " + score + " para " + player.getName());
-                return true;
-            }
-            cleanup();
+            Collections.shuffle(layer, random);
+            layer.sort(Comparator.comparingInt(loc -> Math.abs(loc.getBlockX()-centerX) + Math.abs(loc.getBlockZ()-centerZ)));
+            starts.addAll(layer.subList(0, Math.min(layer.size(), 12)));
+            if (starts.size() >= 110) break;
+        }
+        for (Location first : starts) {
+            List<Location> route = new ArrayList<>(); route.add(first);
+            if (extendPlan(route, ahead, 0)) return route;
+        }
+        return List.of();
+    }
+
+    // Búsqueda con retroceso: comprueba que haya 2 plataformas adelantadas
+    // y no pone nada en el mundo hasta tener la ruta completa.
+    private boolean extendPlan(List<Location> route, int remaining, int depth) {
+        if (remaining <= 0) return true;
+        if (depth > 4) return false;
+        Set<String> reserved = new HashSet<>();
+        for (Location loc : route) reserved.add(column(loc));
+        List<Location> options = candidates(route.get(route.size()-1), reserved);
+        int tries = 0;
+        for (Location candidate : options) {
+            if (++tries > 75) break;
+            route.add(candidate);
+            if (extendPlan(route, remaining-1, depth+1)) return true;
+            route.remove(route.size()-1);
         }
         return false;
+    }
+
+    // Si una ruta llega a una zona sin salida, regenerar a otra altura/zona
+    // conservando puntos; nunca destruir bloques originales del Lobby.
+    private boolean recoverCourse(Player player) {
+        cleanup();
+        Location a = parsePosition("pos1"), b = parsePosition("pos2");
+        List<Location> route = planStart(a, b);
+        if (route.isEmpty()) {
+            getLogger().warning("No se encontró una cadena de plataformas libres dentro del área. "
+                    + "Comprueba que hay aire en los niveles altos y que las esquinas contienen el espacio libre.");
+            return false;
+        }
+        for (Location loc : route) if (!place(loc)) { cleanup(); return false; }
+        Location first = route.get(0);
+        player.teleport(first.clone().add(.5, 1.05, .5));
+        player.setFallDistance(0);
+        lastProgress = System.currentTimeMillis();
+        msg(player, "relocated", "score", "" + score);
+        return true;
     }
     private boolean place(Location p) {
         if (!emptySpace(p)) return false;
@@ -241,67 +262,30 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         cleanup();
         if (tell && p.isOnline()) msg(p, "finish", "score", "" + achieved, "best", "" + Math.max(best(p), achieved));
     }
-    private Location findStart(Location a, Location b) {
-        World world = a.getWorld();
-        int minX = Math.min(a.getBlockX(), b.getBlockX()) + 2;
-        int maxX = Math.max(a.getBlockX(), b.getBlockX()) - 2;
-        int minZ = Math.min(a.getBlockZ(), b.getBlockZ()) + 2;
-        int maxZ = Math.max(a.getBlockZ(), b.getBlockZ()) - 2;
-        int minY = Math.min(a.getBlockY(), b.getBlockY()) + 3;
-        int maxY = Math.max(a.getBlockY(), b.getBlockY()) - 4;
-        int cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
-        int preferredY = Math.min(a.getBlockY(), b.getBlockY()) + 6;
-        // Search outward from the center, preferring the requested starting height.
-        // Never overwrite existing structures or select a location with insufficient headroom.
-        Location best = null;
-        double bestCost = Double.POSITIVE_INFINITY;
-        for (int x = minX; x <= maxX; x++) for (int z = minZ; z <= maxZ; z++) {
-            for (int y = minY; y <= maxY; y++) {
-                Location candidate = new Location(world, x, y, z);
-                if (!emptySpace(candidate)) continue;
-                double cost = Math.abs(x - cx) + Math.abs(z - cz) + Math.abs(y - preferredY) * 1.7;
-                if (cost < bestCost) { bestCost = cost; best = candidate; }
-            }
-        }
-        return best;
-    }
-
     private void start(Player p) {
         if (runner != null) { msg(p, "busy"); return; }
         Location a = parsePosition("pos1"), b = parsePosition("pos2");
         if (a == null || b == null || a.getWorld() != b.getWorld()) {
             msg(p, "no-area");
-            getLogger().warning("Arena no disponible: world='" + getConfig().getString("area.world")
+            getLogger().warning("Arena inválida: mundo='" + getConfig().getString("area.world")
                     + "', pos1='" + getConfig().getString("area.pos1")
-                    + "', pos2='" + getConfig().getString("area.pos2")
-                    + "'. Mundos cargados: " + Bukkit.getWorlds().stream().map(World::getName).toList());
+                    + "', pos2='" + getConfig().getString("area.pos2") + "'.");
             return;
         }
-        Location start = parsePosition("start");
-        if (start != null) start = start.getBlock().getLocation();
-        if (start == null || !emptySpace(start)) {
-            start = findStart(a, b);
-            if (start != null) getLogger().info("Inicio automático libre elegido: "
-                    + start.getBlockX() + "," + start.getBlockY() + "," + start.getBlockZ());
-        }
-        if (start == null) {
+        List<Location> route = planStart(a, b);
+        if (route.isEmpty()) {
             msg(p, "no-space");
-            getLogger().warning("No hay ninguna posición libre dentro de la arena para colocar el primer bloque. "
-                    + "Marca un inicio en una zona con al menos 3 bloques verticales de aire con /ajparkour set spawn.");
+            getLogger().warning("Imposible planear las primeras plataformas. Área: "
+                    + getConfig().getString("area.pos1") + " -> " + getConfig().getString("area.pos2")
+                    + ", mundo=" + a.getWorld().getName() + ".");
             return;
         }
         score = 0; runner = p; lastProgress = System.currentTimeMillis();
-        if (!place(start)) { end(false); msg(p, "no-area"); return; }
-        int ahead = Math.max(1, Math.min(4, getConfig().getInt("game.jumps-ahead", 2)));
-        for (int i = 0; i < ahead; i++) {
-            Location next = findNext(platforms.getLast());
-            if (next == null || !place(next)) {
-                if (!recoverCourse(p)) { end(false); msg(p, "no-route"); }
-                else msg(p, "start");
-                return;
-            }
+        for (Location loc : route) {
+            if (!place(loc)) { end(false); msg(p, "no-space"); return; }
         }
-        p.teleport(start.clone().add(.5, 1.05, .5));
+        Location first = route.get(0);
+        p.teleport(first.clone().add(.5, 1.05, .5));
         p.setFallDistance(0);
         msg(p, "start");
     }
