@@ -27,6 +27,8 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
     private BukkitTask watchdog;
     private YamlConfiguration scores;
     private File scoresFile;
+    private Location startReturnLocation;
+    private final Map<UUID, Location> pendingRespawns = new HashMap<>();
 
     @Override public void onEnable() {
         saveDefaultConfig();
@@ -97,7 +99,7 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
             && p.getBlockY() >= Math.min(a.getBlockY(), b.getBlockY()) + 3
             && p.getBlockY() <= Math.min(p.getWorld().getMaxHeight() - 4,
                     Math.max(a.getBlockY(), b.getBlockY()) - 4
-                    + Math.max(0, Math.min(32, getConfig().getInt("game.auto-elevate-max-blocks", 24))));
+                    + Math.max(0, Math.min(128, getConfig().getInt("game.auto-elevate-max-blocks", 50))));
     }
     private String column(Location l) { return l.getBlockX() + ":" + l.getBlockZ(); }
     private boolean emptySpace(Location candidate) {
@@ -174,7 +176,7 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         int minY = Math.min(a.getBlockY(), b.getBlockY()) + 3;
         int naturalMaxY = Math.max(a.getBlockY(), b.getBlockY()) - 4;
         int maxY = Math.min(a.getWorld().getMaxHeight() - 4,
-                naturalMaxY + Math.max(0, Math.min(32, getConfig().getInt("game.auto-elevate-max-blocks", 24))));
+                naturalMaxY + Math.max(0, Math.min(128, getConfig().getInt("game.auto-elevate-max-blocks", 50))));
         if (minX > maxX || minZ > maxZ || minY > maxY) return List.of();
         int ahead = Math.max(1, Math.min(4, getConfig().getInt("game.jumps-ahead", 2)));
         Location preferred = parsePosition("start");
@@ -221,25 +223,66 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         return false;
     }
 
-    // Si una ruta llega a una zona sin salida, regenerar a otra altura/zona
-    // conservando puntos; nunca destruir bloques originales del Lobby.
-    private boolean recoverCourse(Player player) {
-        cleanup();
-        Location a = parsePosition("pos1"), b = parsePosition("pos2");
-        List<Location> route = planStart(a, b);
-        if (route.isEmpty()) {
-            getLogger().warning("No se encontró una cadena de plataformas libres dentro del área. "
-                    + "Comprueba que hay aire en los niveles altos y que las esquinas contienen el espacio libre.");
-            return false;
+    // Reemplazar solo las plataformas futuras. NUNCA teletransportar al jugador
+    // durante un salto: permanece sobre la plataforma alcanzada y conserva sus puntos.
+    private boolean replanFuture() {
+        if (platforms.isEmpty()) return false;
+        Location current = platforms.getFirst().clone();
+        while (platforms.size() > 1) {
+            Location future = platforms.removeLast();
+            Block b = future.getBlock();
+            BlockData original = originals.remove(b);
+            if (original != null) b.setBlockData(original, false);
+            visitedColumns.remove(column(future));
         }
-        for (Location loc : route) if (!place(loc)) { cleanup(); return false; }
-        Location first = route.get(0);
-        player.teleport(first.clone().add(.5, 1.05, .5));
-        player.setFallDistance(0);
-        lastProgress = System.currentTimeMillis();
-        msg(player, "relocated", "score", "" + score);
+        int ahead = Math.max(1, Math.min(4, getConfig().getInt("game.jumps-ahead", 2)));
+        List<Location> planned = new ArrayList<>();
+        planned.add(current);
+        if (!extendPlan(planned, ahead, 0)) return false;
+        for (int i = 1; i < planned.size(); i++) {
+            if (!place(planned.get(i))) return false;
+        }
         return true;
     }
+
+    private Location lobbySpawn(Player player) {
+        String saved = getConfig().getString("area.lobby-spawn", "");
+        if (saved != null && !saved.isBlank()) {
+            try {
+                String[] values = saved.split(",");
+                World world = Bukkit.getWorld(values[0].trim());
+                if (world != null && values.length >= 6) {
+                    return new Location(world, Double.parseDouble(values[1]), Double.parseDouble(values[2]),
+                        Double.parseDouble(values[3]), Float.parseFloat(values[4]), Float.parseFloat(values[5]));
+                }
+            } catch (NumberFormatException ex) {
+                getLogger().warning("area.lobby-spawn inválido; se usará la posición de entrada.");
+            }
+        }
+        if (startReturnLocation != null && startReturnLocation.getWorld() != null) return startReturnLocation.clone();
+        return player.getWorld().getSpawnLocation().clone().add(.5, 0, .5);
+    }
+
+    private void returnToLobby(Player player) {
+        Location destination = lobbySpawn(player);
+        String command = getConfig().getString("game.fall-command", "").trim();
+        // Si el administrador fijó /ajparkour set lobbyspawn, se usa ese destino preciso.
+        // En caso contrario, se admite un comando de spawn de otro plugin.
+        if (getConfig().getString("area.lobby-spawn", "").isBlank() && !command.isBlank()) {
+            player.performCommand(command.startsWith("/") ? command.substring(1) : command);
+        } else {
+            player.teleport(destination);
+            player.setFallDistance(0);
+        }
+    }
+
+    private void fall(Player player) {
+        if (runner != player) return;
+        msg(player, "fell", "score", "" + score);
+        end(true);
+        Bukkit.getScheduler().runTask(this, () -> { if (player.isOnline()) returnToLobby(player); });
+    }
+
     private void diagnose(Player p) {
         Location a = parsePosition("pos1"), b = parsePosition("pos2");
         if (a == null || b == null) { msg(p, "no-area"); return; }
@@ -250,7 +293,7 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         int minY = Math.min(a.getBlockY(), b.getBlockY()) + 3;
         int maxY = Math.min(a.getWorld().getMaxHeight()-4,
                 Math.max(a.getBlockY(), b.getBlockY()) - 4
-                + Math.max(0, Math.min(32, getConfig().getInt("game.auto-elevate-max-blocks", 24))));
+                + Math.max(0, Math.min(128, getConfig().getInt("game.auto-elevate-max-blocks", 50))));
         long free = 0;
         int sampleY = -1;
         if (minX <= maxX && minZ <= maxZ && minY <= maxY) {
@@ -317,6 +360,7 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
             return;
         }
         score = 0; runner = p; lastProgress = System.currentTimeMillis();
+        startReturnLocation = p.getLocation().clone();
         for (Location loc : route) {
             if (!place(loc)) { end(false); msg(p, "no-space"); return; }
         }
@@ -346,20 +390,34 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         if (score > best(p)) updateBest(p);
         Location generated = findNext(platforms.getLast());
         if (generated == null || !place(generated)) {
-            if (!recoverCourse(p)) { msg(p, "no-route"); end(true); }
+            // No hay ruta en la dirección elegida. Mantener al jugador quieto
+            // y replanificar únicamente los siguientes bloques, sin teletransporte.
+            if (!replanFuture()) { msg(p, "no-route"); end(true); }
         }
     }
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void move(PlayerMoveEvent e) {
         if (runner != e.getPlayer() || e.getTo() == null) return;
         if (e.getFrom().getWorld() == e.getTo().getWorld() && e.getFrom().distanceSquared(e.getTo()) < 0.0000001) return;
-        if (e.getTo().getWorld() != platforms.getFirst().getWorld() || e.getTo().getY() < platforms.getFirst().getY() - 12) {
-            end(true); return;
+        if (platforms.isEmpty()) return;
+        if (e.getTo().getWorld() != platforms.getFirst().getWorld()) { end(true); return; }
+        double fallLimit = Math.max(3, Math.min(20, getConfig().getDouble("game.fall-distance", 5.0)));
+        if (e.getTo().getY() < platforms.getFirst().getY() - fallLimit) {
+            fall(e.getPlayer()); return;
         }
         advance(e.getPlayer());
     }
     @EventHandler public void quit(PlayerQuitEvent e) { if (runner == e.getPlayer()) end(false); }
-    @EventHandler public void death(PlayerDeathEvent e) { if (runner == e.getEntity()) end(false); }
+    @EventHandler public void death(PlayerDeathEvent e) {
+        if (runner == e.getEntity()) {
+            pendingRespawns.put(e.getEntity().getUniqueId(), lobbySpawn(e.getEntity()));
+            end(true);
+        }
+    }
+    @EventHandler public void respawn(PlayerRespawnEvent e) {
+        Location destination = pendingRespawns.remove(e.getPlayer().getUniqueId());
+        if (destination != null) e.setRespawnLocation(destination);
+    }
     @EventHandler public void teleport(PlayerTeleportEvent e) {
         if (runner == e.getPlayer() && e.getTo() != null && e.getTo().getWorld() != e.getFrom().getWorld()) end(true);
     }
@@ -370,7 +428,7 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         if (runner != null && inArea(e.getBlockPlaced().getLocation())) e.setCancelled(true);
     }
     @Override public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (args.length == 0) { if (sender instanceof Player p) msg(p, "usage"); else sender.sendMessage("/ajparkour start|salir|top|set posicion 1|2|set spawn|reload"); return true; }
+        if (args.length == 0) { if (sender instanceof Player p) msg(p, "usage"); else sender.sendMessage("/ajparkour start|salir|top|set posicion 1|2|set spawn|set lobbyspawn|reload"); return true; }
         String option = args[0].toLowerCase(Locale.ROOT);
         if (option.equals("start") || option.equals("iniciar")) {
             if (!(sender instanceof Player p)) { sender.sendMessage("Solo jugadores."); return true; }
@@ -406,6 +464,12 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
             getConfig().set("area." + key, coord); saveConfig();
             msg(p, "set-corner", "corner", args[2], "position", coord); return true;
         }
+        if (args.length >= 2 && args[1].equalsIgnoreCase("lobbyspawn")) {
+            Location l = p.getLocation();
+            getConfig().set("area.lobby-spawn", l.getWorld().getName() + "," + l.getX() + "," + l.getY()
+                    + "," + l.getZ() + "," + l.getYaw() + "," + l.getPitch());
+            saveConfig(); msg(p, "set-lobby-spawn"); return true;
+        }
         if (args.length >= 2 && args[1].equalsIgnoreCase("spawn")) {
             Location l = p.getLocation();
             getConfig().set("area.world", l.getWorld().getName());
@@ -421,7 +485,7 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
             return options.stream().filter(s -> s.startsWith(args[0].toLowerCase(Locale.ROOT))).toList();
         }
         if (!sender.hasPermission("ajparkourbastion.admin")) return List.of();
-        if (args.length == 2 && args[0].equalsIgnoreCase("set")) return List.of("posicion", "spawn").stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        if (args.length == 2 && args[0].equalsIgnoreCase("set")) return List.of("posicion", "spawn", "lobbyspawn").stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
         if (args.length == 3 && args[0].equalsIgnoreCase("set") && args[1].equalsIgnoreCase("posicion")) return List.of("1", "2");
         return List.of();
     }

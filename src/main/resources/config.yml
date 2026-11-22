@@ -9,12 +9,17 @@ area:
 game:
   # Primera plataforma + 2 adelantadas = 3 visibles
   jumps-ahead: 2
-  # Si el área está ocupada por construcciones, se pueden utilizar hasta 24 bloques
+  # Si el área está ocupada por construcciones, se pueden utilizar hasta 50 bloques
   # de altura adicionales sobre la esquina más alta (sin superar el límite del mundo).
   # Cambia a 0 para respetar estrictamente el máximo Y marcado.
-  auto-elevate-max-blocks: 24
+  auto-elevate-max-blocks: 50
   max-placement-attempts: 220
   idle-seconds: 120
+  # Caer 5 bloques por debajo de la plataforma actual termina la partida y devuelve al Lobby.
+  fall-distance: 5
+  # Opcional: comando de spawn de DeluxeHub si no utilizas /ajparkour set lobbyspawn.
+  # fall-command: spawn
+  fall-command: '' 
   # Bloques en mundo: por seguridad solo una partida activa por area
   single-session: true
   # Conservar los huecos para facilitar los primeros saltos
@@ -35,10 +40,13 @@ messages:
   relocated: "&e¡Ruta renovada! &7Continuas con &a%score% &7puntos."
   no-route: '&cNo se pudo generar otra plataforma válida. Partida finalizada sin perder tus puntos.'
   left: '&7Has salido del parkour.'
-  usage: '&eUsa /ajparkour start, salir, top, set posicion 1, set posicion 2 o set spawn.'
+  fell: '&c¡Te caíste! &7Regresando al spawn del Lobby. Puntos: &e%score%'
+  usage: '&eUsa /ajparkour start, salir, top, set posicion 1, set posicion 2, set spawn o set lobbyspawn.'
   set-corner: '&aEsquina %corner% guardada en &f%position%'
   set-start: '&aInicio guardado. El bloque inicial aparecerá cerca de esta posición.'
+  set-lobby-spawn: '&aPunto de regreso al Lobby guardado. Al caer volverás aquí.'
   reloaded: '&aConfiguración recargada.'
   no-permission: '&cNo tienes permiso para usar ese comando.'
   top-header: '&#6BFF80&lTOP PARKOUR'
   top-line: '&e%rank%. &f%name% &8- &a%score% puntos'
+

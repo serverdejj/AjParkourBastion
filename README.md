@@ -1,17 +1,21 @@
-# AjParkourBastion 1.0.4 — corrección de inicio
+# AjParkourBastion 1.0.5 — corrección de teletransporte y caída
 
-Esta versión corrige `/ajparkour set spawn`: ahora guarda la **posición de los pies** (aire) en vez del suelo sólido bajo el jugador. El bloque de inicio aparece en esa ubicación y el jugador se coloca encima.
+## Cambios
 
-El planificador revisa más posiciones por nivel y habilita, por defecto, una elevación automática hasta **24 bloques por encima de la coordenada Y máxima** del área para sortear los edificios del Lobby. Esto puede colocar el parkour más alto que el techo de la región marcada. Configura `game.auto-elevate-max-blocks: 0` para respetar la altura máxima de la arena.
-
-Nuevo comando administrador: `/ajparkour diagnostico` para ver una muestra de posiciones libres, mundo y alturas examinadas. Si el parkour no inicia, el diagnóstico también aparece en el chat.
+- La recuperación de un salto sin salida **ya no teletransporta al jugador al principio**. Se eliminan solo las plataformas futuras y se busca otra cadena desde la plataforma alcanzada.
+- `game.auto-elevate-max-blocks: 50` por defecto; el código acepta 0–128. En servidores ya instalados, añadir o modificar este valor en `plugins/AjParkourBastion/config.yml`.
+- `game.fall-distance: 5`: al caer más de cinco bloques por debajo de la plataforma alcanzada, se termina la partida, se conservan los récords y se devuelve al Lobby.
+- `/ajparkour set lobbyspawn`: **ejecutar en la ubicación real del spawn del Lobby**; se guarda en `area.lobby-spawn` (mundo, posición, yaw, pitch).
+- Si no se ha marcado un lobbyspawn, se vuelve a la ubicación donde el jugador estaba cuando inició el parkour. Opcionalmente, se puede establecer `game.fall-command: spawn` para ejecutar `/spawn` (por ejemplo, DeluxeHub).
+- El comando `/ajparkour set spawn` sigue siendo únicamente el lugar de la primera plataforma.
 
 ## Instalación
 
-1. Actualiza el código del repositorio Github y compila con Actions (Java 21).
-2. Apaga el Lobby y reemplaza el JAR.
-3. Conserva `plugins/AjParkourBastion/records.yml`.
-4. **IMPORTANTE:** el `config.yml` existente NO se sobrescribe al actualizar. Añade bajo `game:` la línea `auto-elevate-max-blocks: 24` o renombra solo `config.yml` para regenerarlo. Los registros no se deben borrar.
-5. Ejecuta `/ajparkour diagnostico` y `/ajparkour start`.
+1. Sustituir código del repositorio por esta versión y compilar en GitHub Actions.
+2. Apagar Lobby, reemplazar solo el JAR, reiniciar.
+3. Conservar `plugins/AjParkourBastion/records.yml` y `config.yml`.
+4. Cambiar en `plugins/AjParkourBastion/config.yml`: `game.auto-elevate-max-blocks: 50`. Agregar `game.fall-distance: 5` si no existe.
+5. Pararse en el spawn real y ejecutar `/ajparkour set lobbyspawn` una vez.
+6. `/ajparkour start` para probar.
 
-Sigue siendo una versión sin prueba de integración en un servidor Purpur real. La existencia de posiciones libres no garantiza que haya una ruta completa; si el problema persiste, el diagnóstico permitirá distinguir entre falta de aire y restricciones de ruta.
+**Nota:** este ZIP es código fuente; necesita compilarse y probarse dentro de Purpur 1.21.11. No se modifican récords existentes.

@@ -1,5 +1,5 @@
 name: AjParkourBastion
-version: '1.0.4'
+version: '1.0.5'
 main: mc.bastion.parkour.AjParkourBastion
 api-version: '1.21'
 author: BASTION MC
@@ -8,7 +8,7 @@ commands:
   ajparkour:
     description: Iniciar, abandonar y configurar el parkour
     aliases: [ajpk, parkour]
-    usage: /ajparkour <start|salir|top|set posicion 1|2|set spawn|diagnostico|reload>
+    usage: /ajparkour <start|salir|top|set posicion 1|2|set spawn|set lobbyspawn|diagnostico|reload>
 permissions:
   ajparkourbastion.admin:
     default: op
