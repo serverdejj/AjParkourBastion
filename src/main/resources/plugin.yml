@@ -1,5 +1,5 @@
 name: AjParkourBastion
-version: '1.0.5'
+version: '1.1.0'
 main: mc.bastion.parkour.AjParkourBastion
 api-version: '1.21'
 author: BASTION MC

@@ -24,8 +24,10 @@ game:
   # Opcional: comando de spawn de DeluxeHub si no utilizas /ajparkour set lobbyspawn.
   # fall-command: spawn
   fall-command: '' 
-  # Bloques en mundo: por seguridad solo una partida activa por area
-  single-session: true
+  # Máximo de jugadores simultáneos (1-4); cada uno ocupa un cuadrante propio.
+  max-players: 4
+  # Restaura los efectos que el jugador tenía antes de entrar al terminar.
+  restore-effects-on-exit: true
   # Conservar los huecos para facilitar los primeros saltos
   levels:
     easy-until: 20
@@ -38,7 +40,9 @@ messages:
   score: '&#6BFF80+1 punto &8| &fPuntuación: &e%score% &8| &7Dificultad: &f%level%'
   finish: '&eTerminaste con &6%score% &epuntos. &7Récord: &f%best%'
   record: '&6¡Nuevo récord personal: %best% puntos!'
-  busy: '&cLa arena está ocupada. Espera a que termine la partida actual.'
+  busy: '&cEl parkour está lleno (4/4). Espera a que se libere un lugar.'
+  already-playing: '&eYa estás participando en el parkour.'
+  block-selected: '&aBloques seleccionados: &f%block%'
   no-area: '&cEl mundo o las esquinas de la arena no son válidos. Comprueba area.world, pos1 y pos2.'
   no-space: '&cNo se encontró un perímetro despejado para el parkour. Comprueba la altura de la arena y /ajparkour diagnostico.'
   relocated: "&e¡Ruta renovada! &7Continuas con &a%score% &7puntos."
@@ -54,3 +58,9 @@ messages:
   top-header: '&#6BFF80&lTOP PARKOUR'
   top-line: '&e%rank%. &f%name% &8- &a%score% puntos'
 
+
+selector:
+  item-name: '&#6BFF80&lPersonalizar bloques'
+  item-lore: '&7Clic derecho para elegir bloques'
+  menu-title: '&#6BFF80&lTus bloques de parkour'
+  random-name: '&eBloques aleatorios'
