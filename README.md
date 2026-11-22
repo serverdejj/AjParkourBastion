@@ -33,3 +33,9 @@ Plugin independiente para **BASTION MC**, Minecraft **Purpur 1.21.11**, Java 21.
 
 ## Observación
 Este es un proyecto nuevo; requiere compilación y pruebas en el servidor real. No se ha validado en una ejecución Purpur completa.
+
+
+## v1.0.1: solución al inicio rechazado
+Si el centro está ocupado, busca automáticamente un bloque inicial en una posición con tres bloques verticales libres en la arena. Si el mundo no existe o las esquinas son incorrectas, registra en consola la configuración y los mundos cargados. Si toda el área está ocupada, muestra un mensaje específico.
+
+Si ya tienes un `plugins/AjParkourBastion/config.yml`, el plugin no lo reemplazará automáticamente. Puedes agregar `messages.no-space` manualmente o conservar el mensaje por defecto que entrega la nueva versión.

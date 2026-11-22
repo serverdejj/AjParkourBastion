@@ -181,17 +181,55 @@ public final class AjParkourBastion extends JavaPlugin implements Listener, Comm
         cleanup();
         if (tell && p.isOnline()) msg(p, "finish", "score", "" + achieved, "best", "" + Math.max(best(p), achieved));
     }
+    private Location findStart(Location a, Location b) {
+        World world = a.getWorld();
+        int minX = Math.min(a.getBlockX(), b.getBlockX()) + 2;
+        int maxX = Math.max(a.getBlockX(), b.getBlockX()) - 2;
+        int minZ = Math.min(a.getBlockZ(), b.getBlockZ()) + 2;
+        int maxZ = Math.max(a.getBlockZ(), b.getBlockZ()) - 2;
+        int minY = Math.min(a.getBlockY(), b.getBlockY()) + 3;
+        int maxY = Math.max(a.getBlockY(), b.getBlockY()) - 4;
+        int cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+        int preferredY = Math.min(a.getBlockY(), b.getBlockY()) + 6;
+        // Search outward from the center, preferring the requested starting height.
+        // Never overwrite existing structures or select a location with insufficient headroom.
+        Location best = null;
+        double bestCost = Double.POSITIVE_INFINITY;
+        for (int x = minX; x <= maxX; x++) for (int z = minZ; z <= maxZ; z++) {
+            for (int y = minY; y <= maxY; y++) {
+                Location candidate = new Location(world, x, y, z);
+                if (!emptySpace(candidate)) continue;
+                double cost = Math.abs(x - cx) + Math.abs(z - cz) + Math.abs(y - preferredY) * 1.7;
+                if (cost < bestCost) { bestCost = cost; best = candidate; }
+            }
+        }
+        return best;
+    }
+
     private void start(Player p) {
         if (runner != null) { msg(p, "busy"); return; }
         Location a = parsePosition("pos1"), b = parsePosition("pos2");
-        if (a == null || b == null || a.getWorld() != b.getWorld()) { msg(p, "no-area"); return; }
-        Location start = parsePosition("start");
-        if (start == null || !inArea(start)) {
-            start = new Location(a.getWorld(), (a.getBlockX() + b.getBlockX()) / 2.0,
-                    Math.min(a.getBlockY(), b.getBlockY()) + 6, (a.getBlockZ() + b.getBlockZ()) / 2.0);
+        if (a == null || b == null || a.getWorld() != b.getWorld()) {
+            msg(p, "no-area");
+            getLogger().warning("Arena no disponible: world='" + getConfig().getString("area.world")
+                    + "', pos1='" + getConfig().getString("area.pos1")
+                    + "', pos2='" + getConfig().getString("area.pos2")
+                    + "'. Mundos cargados: " + Bukkit.getWorlds().stream().map(World::getName).toList());
+            return;
         }
-        start = start.getBlock().getLocation();
-        if (!emptySpace(start)) { msg(p, "no-area"); return; }
+        Location start = parsePosition("start");
+        if (start != null) start = start.getBlock().getLocation();
+        if (start == null || !emptySpace(start)) {
+            start = findStart(a, b);
+            if (start != null) getLogger().info("Inicio automático libre elegido: "
+                    + start.getBlockX() + "," + start.getBlockY() + "," + start.getBlockZ());
+        }
+        if (start == null) {
+            msg(p, "no-space");
+            getLogger().warning("No hay ninguna posición libre dentro de la arena para colocar el primer bloque. "
+                    + "Marca un inicio en una zona con al menos 3 bloques verticales de aire con /ajparkour set spawn.");
+            return;
+        }
         score = 0; runner = p; lastProgress = System.currentTimeMillis();
         if (!place(start)) { end(false); msg(p, "no-area"); return; }
         int ahead = Math.max(1, Math.min(4, getConfig().getInt("game.jumps-ahead", 2)));
