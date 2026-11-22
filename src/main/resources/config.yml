@@ -1,0 +1,38 @@
+# AjParkourBastion - BASTION MC
+# El mundo y las esquinas se pueden modificar con /ajparkour set posicion 1 y 2.
+area:
+  world: 'Void'
+  pos1: '-20,90,16'
+  pos2: '35,130,74'
+  # Si no se define, el inicio se calcula en el centro del area.
+  start: ''
+game:
+  # Primera plataforma + 2 adelantadas = 3 visibles
+  jumps-ahead: 2
+  max-placement-attempts: 220
+  idle-seconds: 120
+  # Bloques en mundo: por seguridad solo una partida activa por area
+  single-session: true
+  # Conservar los huecos para facilitar los primeros saltos
+  levels:
+    easy-until: 20
+    medium-until: 35
+    hard-until: 50
+  materials: [LIME_CONCRETE, LIGHT_BLUE_CONCRETE, YELLOW_CONCRETE, ORANGE_CONCRETE, PURPLE_CONCRETE, PINK_CONCRETE, CYAN_CONCRETE, RED_CONCRETE, BLUE_CONCRETE]
+messages:
+  prefix: '&#6BFF80&lBASTION PARKOUR &8» &r'
+  start: '&a¡Comenzó el parkour! &7Salta al siguiente bloque.'
+  score: '&#6BFF80+1 punto &8| &fPuntuación: &e%score% &8| &7Dificultad: &f%level%'
+  finish: '&eTerminaste con &6%score% &epuntos. &7Récord: &f%best%'
+  record: '&6¡Nuevo récord personal: %best% puntos!'
+  busy: '&cLa arena está ocupada. Espera a que termine la partida actual.'
+  no-area: '&cNo se ha configurado una arena válida en un mundo cargado.'
+  no-route: '&cNo se pudo generar otra plataforma válida. Partida finalizada sin perder tus puntos.'
+  left: '&7Has salido del parkour.'
+  usage: '&eUsa /ajparkour start, salir, top, set posicion 1, set posicion 2 o set spawn.'
+  set-corner: '&aEsquina %corner% guardada en &f%position%'
+  set-start: '&aInicio guardado. El bloque inicial aparecerá cerca de esta posición.'
+  reloaded: '&aConfiguración recargada.'
+  no-permission: '&cNo tienes permiso para usar ese comando.'
+  top-header: '&#6BFF80&lTOP PARKOUR'
+  top-line: '&e%rank%. &f%name% &8- &a%score% puntos'
